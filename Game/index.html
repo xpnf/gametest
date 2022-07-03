@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Vanilla Boilerplate</title>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script src="https://unpkg.com/moralis/dist/moralis.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+</head>
+
+<body>
+    <button id="btn-login">Moralis Metamask Login</button>
+    <button id="btn-logout">Logout</button>
+    <br><br>
+    <script>
+        /** Connect to Moralis server */
+        const serverUrl = "https://8wwi9fxkytyl.usemoralis.com:2053/server";
+        const appId = "P7xM6F0JTDn0ftxSxSgNdlgQEGIbIcLUaXvAk0nu";
+        Moralis.start({ serverUrl, appId });
+
+        /** Add from here down */
+       
+
+        var config = {
+          type: Phaser.CANVAS,
+          width: 1080,
+          height: 1080,
+          physics: {
+          default: 'arcade',
+          arcade: {
+              debug: true
+          }
+      },
+          scene: {
+              preload: preload,
+              create: create,
+              update: update
+          }
+      };
+
+      var game;
+       
+      var player;
+      var competitors = {};
+
+      var cursor;
+      var obstacles;
+
+      var yLimit;
+      var xLimit;
+
+      function launch(){
+          let user = Moralis.User.current();
+          if (!user) {
+            console.log("PLEASE LOG IN WITH METAMASK!!")
+          }       
+          else{
+            console.log(user.get('ethAddress') + " " + "logged in")
+            game = new Phaser.Game(config);
+          } 
+
+        }
+
+        launch();
+
+      function preload ()
+      {
+        this.load.image('floor', 'gameAssets/background1.jpg');
+        this.load.image('obstacle', 'gameAssets/wall1.jpg')
+        this.load.image('player', 'gameAssets/protonautPFP.png')
+        this.load.image('competitor', 'gameAssets/protonautPFP.png')
+      }
+
+      async function create ()
+      {
+        let background = this.add.image(0, 0, 'floor');
+          background.x = background.displayWidth / 2;
+          background.y = background.displayHeight / 2;
+          xLimit = background.displayWidth; //the player cannot go beyond these x and
+          yLimit = background.displayHeight; //y positions
+
+          player = this.physics.add.sprite(300, 300, 'player'); //create the player sprite
+          player.setScale(1); //make it appear smaller
+          cursors = this.input.keyboard.createCursorKeys();
+
+          obstacles = this.physics.add.staticGroup(); //create group for obstacles
+          obstacles.create(510, 520, 'obstacle');
+          obstacles.create(297, 297, 'obstacle');
+          
+          this.physics.add.collider(player, obstacles); //collision detection between player and obstacles
+
+          let user = Moralis.User.current();
+          let query = new Moralis.Query('PlayerPosition');
+          let subscription = await query.subscribe();
+          subscription.on('create', (plocation) => {
+            if(plocation.get("player") != user.get("ethAddress")){
+
+              if(competitors[plocation.get("player")] == undefined){
+              // create a sprite
+              competitors[plocation.get("player")] = this.add.image( plocation.get("x"), plocation.get("y"), 'competitor').setScale(0.4);
+            }
+            else{
+              competitors[plocation.get("player")].x = plocation.get("x");
+              competitors[plocation.get("player")].y = plocation.get("y");
+            }
+
+              console.log("someone moved!")
+              console.log(plocation.get("player"))
+              console.log("new X", plocation.get("x"))
+              console.log("new Y", plocation.get("y"))
+            }
+            });
+      }
+
+      async function update ()
+      {
+        if (cursors.left.isDown && player.x >= 0) {
+            player.setVelocityX(-200); //go left
+        }
+        else if (cursors.right.isDown && player.x <= xLimit) {
+            player.setVelocityX(200); //go right
+        }
+        else {
+            player.setVelocityX(0); //don't move left or right
+        }
+        if (cursors.up.isDown && player.y >= 0) {
+            player.setVelocityY(-200); //move up
+        }
+        else if (cursors.down.isDown && player.y <= yLimit) {
+            player.setVelocityY(200); //move down
+        }
+        else {
+            player.setVelocityY(0); //don't move up or down
+        }
+        this.cameras.main.centerOn(player.x, player.y); //centre camera on current position of player
+        this.cameras.main.setBounds(0, 0, xLimit, yLimit);
+        
+        
+        if(player.lastX!=player.x  || player.lastY!=player.y){
+          let user = Moralis.User.current();
+
+          const PlayerPosition = Moralis.Object.extend("PlayerPosition");
+          const playerPosition = new PlayerPosition();
+
+          playerPosition.set("player",user.get("ethAddress"));
+          playerPosition.set("x",player.x);
+          playerPosition.set("y",player.y)
+
+          player.lastX = player.x;
+          player.lastY = player.y;
+
+          await playerPosition.save();
+        }
+      }
+
+
+      async function login() {
+        let user = Moralis.User.current();
+        if (!user) {
+          user = await Moralis.Web3.authenticate();
+          launch()
+        }
+        console.log("logged in user:", user);
+      }
+
+      async function logOut() {
+        await Moralis.User.logOut();
+        console.log("logged out");
+        location.reload();
+      }
+
+
+      document.getElementById("btn-login").onclick = login;
+      document.getElementById("btn-logout").onclick = logOut;
+    </script>
+</body>
+
+</html>
